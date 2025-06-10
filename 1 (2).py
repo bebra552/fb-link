@@ -2,12 +2,15 @@ import time
 import random
 import csv
 import os
+import tkinter as tk
+from tkinter import filedialog, messagebox
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
+import pandas as pd
 
 
 def human_delay(min_delay=1, max_delay=3):
@@ -15,21 +18,32 @@ def human_delay(min_delay=1, max_delay=3):
 
 
 def setup_stealth_driver():
-    """Настройка браузера с антидетекцией без selenium_stealth"""
+    """Настройка браузера с антидетекцией и отключением логов"""
     options = webdriver.ChromeOptions()
+    
+    # Отключение логов DevTools и других сообщений
+    options.add_argument("--log-level=3")  # Только критические ошибки
+    options.add_argument("--silent")
+    options.add_argument("--disable-logging")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--remote-debugging-port=0")  # Отключение remote debugging
     
     # Основные настройки антидетекции
     options.add_argument("--start-maximized")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--disable-infobars")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-web-security")
     options.add_argument("--allow-running-insecure-content")
     options.add_argument("--disable-features=VizDisplayCompositor")
     
     # Отключаем флаги автоматизации
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+    options.add_experimental_option('useAutomationExtension', False)
+    
+    # Отключение логирования
+    options.add_experimental_option("excludeSwitches", ["enable-logging"])
     options.add_experimental_option('useAutomationExtension', False)
     
     # Случайный User-Agent
@@ -40,8 +54,11 @@ def setup_stealth_driver():
     ]
     options.add_argument(f"user-agent={random.choice(user_agents)}")
     
-    # Создаем драйвер
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    # Создаем драйвер с подавлением логов
+    service = Service(ChromeDriverManager().install())
+    service.creationflags = 0x08000000  # Скрыть окно консоли на Windows
+    
+    driver = webdriver.Chrome(service=service, options=options)
     
     # Скрипты для дополнительной маскировки
     stealth_scripts = [
@@ -224,16 +241,78 @@ def get_links_from_user():
             print("❌ Выберите 1, 2 или 3!")
 
 
-def save_to_csv(data, filename='results.csv'):
-    with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-        writer = csv.writer(csvfile, delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL)
-        writer.writerow(['Ссылка на объект', 'ФИО', 'Полная карточка объекта'])
-        for row in data:
-            cleaned_row = []
-            for cell in row:
-                cleaned_cell = str(cell).replace('\u200b', '').replace('\n', ' ').replace('\r', ' ')
-                cleaned_row.append(cleaned_cell)
-            writer.writerow(cleaned_row)
+def choose_save_location_and_format():
+    """Выбор места сохранения и формата файла"""
+    print("\n" + "=" * 60)
+    print("💾 ВЫБЕРИТЕ ФОРМАТ СОХРАНЕНИЯ")
+    print("=" * 60)
+    print("1. CSV файл (.csv)")
+    print("2. Excel файл (.xlsx)")
+    print("-" * 60)
+    
+    while True:
+        format_choice = input("Ваш выбор (1/2): ").strip()
+        if format_choice in ["1", "2"]:
+            break
+        print("❌ Выберите 1 или 2!")
+    
+    # Скрытое окно tkinter для диалога сохранения
+    root = tk.Tk()
+    root.withdraw()  # Скрываем главное окно
+    
+    if format_choice == "1":
+        file_path = filedialog.asksaveasfilename(
+            title="Сохранить CSV файл",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        return file_path, "csv"
+    else:
+        file_path = filedialog.asksaveasfilename(
+            title="Сохранить Excel файл",
+            defaultextension=".xlsx",
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
+        )
+        return file_path, "excel"
+
+
+def save_data(data, file_path, format_type):
+    """Сохранение данных в выбранном формате"""
+    if not file_path:
+        print("❌ Файл не выбран!")
+        return False
+    
+    try:
+        if format_type == "csv":
+            with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile, delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL)
+                writer.writerow(['Ссылка на объект', 'ФИО', 'Полная карточка объекта'])
+                for row in data:
+                    cleaned_row = []
+                    for cell in row:
+                        cleaned_cell = str(cell).replace('\u200b', '').replace('\n', ' ').replace('\r', ' ')
+                        cleaned_row.append(cleaned_cell)
+                    writer.writerow(cleaned_row)
+        
+        elif format_type == "excel":
+            # Подготавливаем данные для DataFrame
+            df_data = []
+            for row in data:
+                cleaned_row = []
+                for cell in row:
+                    cleaned_cell = str(cell).replace('\u200b', '').replace('\n', ' ').replace('\r', ' ')
+                    cleaned_row.append(cleaned_cell)
+                df_data.append(cleaned_row)
+            
+            df = pd.DataFrame(df_data, columns=['Ссылка на объект', 'ФИО', 'Полная карточка объекта'])
+            df.to_excel(file_path, index=False, engine='openpyxl')
+        
+        print(f"✅ Файл сохранен: {file_path}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Ошибка при сохранении: {e}")
+        return False
 
 
 def main():
@@ -317,11 +396,16 @@ def main():
                 print("⏱️ Пауза...")
                 human_delay(5, 10)
 
+        # Выбор места сохранения и формата
+        file_path, format_type = choose_save_location_and_format()
+        
         # Сохранение результатов
-        save_to_csv(results)
-        print(f"\n💾 ГОТОВО! Результаты сохранены в results.csv")
-        print(f"📈 Обработано: {len(results)} профилей")
-        print(f"📁 Расположение: {os.path.abspath('results.csv')}")
+        if save_data(results, file_path, format_type):
+            print(f"\n💾 ГОТОВО! Результаты сохранены")
+            print(f"📈 Обработано: {len(results)} профилей")
+            print(f"📁 Расположение: {file_path}")
+        else:
+            print("❌ Ошибка при сохранении файла")
 
         print("\n" + "=" * 60)
         input("✅ Обработка завершена! Нажмите Enter для закрытия ➡️ ")
