@@ -11,10 +11,54 @@ from selenium.webdriver.common.action_chains import ActionChains
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 import pandas as pd
+import urllib.parse
+import re
 
 
 def human_delay(min_delay=1, max_delay=3):
     time.sleep(random.uniform(min_delay, max_delay))
+
+
+def clean_facebook_url(url):
+    """Очищает Facebook редирект ссылки и извлекает реальный URL"""
+    try:
+        # Если это Facebook редирект
+        if 'l.facebook.com/l.php' in url:
+            # Извлекаем параметр u из URL
+            parsed = urllib.parse.urlparse(url)
+            query_params = urllib.parse.parse_qs(parsed.query)
+            if 'u' in query_params:
+                real_url = query_params['u'][0]
+                # Убираем fbclid параметр
+                if '?fbclid=' in real_url:
+                    real_url = real_url.split('?fbclid=')[0]
+                elif '&fbclid=' in real_url:
+                    real_url = real_url.split('&fbclid=')[0]
+                return real_url
+        
+        # Убираем fbclid из обычных ссылок
+        if '?fbclid=' in url:
+            url = url.split('?fbclid=')[0]
+        elif '&fbclid=' in url:
+            url = url.split('&fbclid=')[0]
+        
+        return url
+    except:
+        return url
+
+
+def is_social_link(url):
+    """Проверяет, является ли ссылка социальной сетью"""
+    social_domains = [
+        'instagram.com', 'tiktok.com', 'vk.com', 'ok.ru', 
+        'telegram.org', 't.me', 'youtube.com', 'twitter.com',
+        'linkedin.com', 'whatsapp.com', 'viber.com'
+    ]
+    
+    for domain in social_domains:
+        if domain in url.lower():
+            return True
+    return False
 
 
 def setup_stealth_driver():
@@ -99,33 +143,89 @@ def extract_name(soup):
 
 
 def scrape_facebook_links(driver):
-    """Собирает все ссылки из профиля Facebook с текстом"""
+    """Собирает все ссылки из профиля Facebook с текстом и очищает их"""
     try:
         # Ждем немного для загрузки страницы
         human_delay(2, 3)
         
-        # Ищем элементы ссылок с указанным CSS селектором
-        elements = driver.find_elements(By.CSS_SELECTOR,
-                                      'a.x1i10hfl.xjbqb8w.x1ejq31n.x18oe1m7.x1sy0etr.xstzfhl.x972fbf.x10w94by.x1qhh985.x14e42zd.x9f619.x1ypdohk.xt0psk2.xe8uvvx.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x16tdsg8.x1hl2dhg.xggy1nq.x1a2a7pz.xkrqix3.x1sur9pj.x1qq9wsj.x1s688f')
+        # Ищем все ссылки на странице
+        link_selectors = [
+            'a[href*="l.facebook.com/l.php"]',  # Редирект ссылки
+            'a[href*="instagram.com"]',
+            'a[href*="tiktok.com"]',
+            'a[href*="vk.com"]',
+            'a[href*="ok.ru"]',
+            'a[href*="t.me"]',
+            'a[href*="telegram"]',
+            'a[href*="youtube.com"]',
+            'a[href*="twitter.com"]',
+            'a[href*="linkedin.com"]',
+            'a.x1i10hfl.xjbqb8w.x1ejq31n.x18oe1m7.x1sy0etr.xstzfhl.x972fbf.x10w94by.x1qhh985.x14e42zd.x9f619.x1ypdohk.xt0psk2.xe8uvvx.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x16tdsg8.x1hl2dhg.xggy1nq.x1a2a7pz.xkrqix3.x1sur9pj.x1qq9wsj.x1s688f'
+        ]
+        
+        all_elements = []
+        for selector in link_selectors:
+            try:
+                elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                all_elements.extend(elements)
+            except:
+                continue
+        
+        # Убираем дубликаты
+        seen_hrefs = set()
+        unique_elements = []
+        for element in all_elements:
+            href = element.get_attribute('href')
+            if href and href not in seen_hrefs:
+                seen_hrefs.add(href)
+                unique_elements.append(element)
         
         links_data = []
-        for element in elements:
+        for element in unique_elements:
             try:
                 text = element.text.strip()
                 href = element.get_attribute('href')
                 
                 # Фильтруем нежелательные ссылки
-                if (text and href and 
+                if (href and 
                     'recover' not in href.lower() and 
-                    'password' not in text.lower() and
+                    'password' not in href.lower() and
                     'login' not in href.lower() and
-                    'signup' not in href.lower()):
-                    links_data.append(f"{text} | {href}")
+                    'signup' not in href.lower() and
+                    'facebook.com/privacy' not in href.lower() and
+                    'facebook.com/help' not in href.lower()):
+                    
+                    # Очищаем URL
+                    clean_url = clean_facebook_url(href)
+                    
+                    # Проверяем, что это внешняя ссылка или социальная сеть
+                    if (is_social_link(clean_url) or 
+                        ('facebook.com' not in clean_url and 'http' in clean_url)):
+                        
+                        # Если текста нет, используем домен
+                        if not text or len(text) < 3:
+                            try:
+                                domain = urllib.parse.urlparse(clean_url).netloc
+                                text = domain.replace('www.', '')
+                            except:
+                                text = "Ссылка"
+                        
+                        links_data.append(f"{text} | {clean_url}")
+                        
             except Exception:
                 continue
         
+        # Убираем дубликаты по URL
+        unique_links = []
+        seen_urls = set()
+        for link_data in links_data:
+            url = link_data.split(' | ')[-1]
+            if url not in seen_urls:
+                seen_urls.add(url)
+                unique_links.append(link_data)
+        
         # Объединяем все ссылки через разделитель
-        return " --- ".join(links_data) if links_data else "Ссылки не найдены"
+        return " --- ".join(unique_links) if unique_links else "Ссылки не найдены"
         
     except Exception as e:
         print(f"⚠️ Ошибка при сборе ссылок: {e}")
@@ -423,7 +523,8 @@ def main():
                 if formatted_profile:
                     results.append([profile_url, name, formatted_profile, all_links])
                     print(f"✅ Успешно: {name}")
-                    print(f"🔗 Найдено ссылок: {len(all_links.split(' --- ')) if all_links != 'Ссылки не найдены' else 0}")
+                    link_count = len(all_links.split(' --- ')) if all_links != 'Ссылки не найдены' and all_links != 'Ошибка при сборе ссылок' else 0
+                    print(f"🔗 Найдено очищенных ссылок: {link_count}")
                 else:
                     results.append([profile_url, name if name else "Не найдено", "Не найдено", "Ссылки не найдены"])
                     print("❌ Данные не получены")
