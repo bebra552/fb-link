@@ -98,6 +98,40 @@ def extract_name(soup):
     return "Не найдено"
 
 
+def scrape_facebook_links(driver):
+    """Собирает все ссылки из профиля Facebook с текстом"""
+    try:
+        # Ждем немного для загрузки страницы
+        human_delay(2, 3)
+        
+        # Ищем элементы ссылок с указанным CSS селектором
+        elements = driver.find_elements(By.CSS_SELECTOR,
+                                      'a.x1i10hfl.xjbqb8w.x1ejq31n.x18oe1m7.x1sy0etr.xstzfhl.x972fbf.x10w94by.x1qhh985.x14e42zd.x9f619.x1ypdohk.xt0psk2.xe8uvvx.xdj266r.x14z9mp.xat24cr.x1lziwak.xexx8yu.xyri2b.x18d9i69.x1c1uobl.x16tdsg8.x1hl2dhg.xggy1nq.x1a2a7pz.xkrqix3.x1sur9pj.x1qq9wsj.x1s688f')
+        
+        links_data = []
+        for element in elements:
+            try:
+                text = element.text.strip()
+                href = element.get_attribute('href')
+                
+                # Фильтруем нежелательные ссылки
+                if (text and href and 
+                    'recover' not in href.lower() and 
+                    'password' not in text.lower() and
+                    'login' not in href.lower() and
+                    'signup' not in href.lower()):
+                    links_data.append(f"{text} | {href}")
+            except Exception:
+                continue
+        
+        # Объединяем все ссылки через разделитель
+        return " --- ".join(links_data) if links_data else "Ссылки не найдены"
+        
+    except Exception as e:
+        print(f"⚠️ Ошибка при сборе ссылок: {e}")
+        return "Ошибка при сборе ссылок"
+
+
 def scrape_profile_data(driver, profile_url):
     print(f"🌐 Переход к профилю: {profile_url}")
     driver.get(profile_url)
@@ -119,12 +153,17 @@ def scrape_profile_data(driver, profile_url):
 
     if not target_div:
         print("⚠️ Блок <div class='xieb3on'> не найден.")
-        return None, None
+        return None, None, None
 
     print("✅ Блок найден!")
     formatted_profile = extract_profile_data(target_div)
     name = extract_name(soup)
-    return formatted_profile, name
+    
+    # Собираем все ссылки из профиля
+    print("🔗 Собираю ссылки из профиля...")
+    all_links = scrape_facebook_links(driver)
+    
+    return formatted_profile, name, all_links
 
 
 def get_links_from_file():
@@ -286,7 +325,7 @@ def save_data(data, file_path, format_type):
         if format_type == "csv":
             with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile, delimiter=';', quotechar='"', quoting=csv.QUOTE_ALL)
-                writer.writerow(['Ссылка на объект', 'ФИО', 'Полная карточка объекта'])
+                writer.writerow(['Ссылка на объект', 'ФИО', 'Полная карточка объекта', 'Все ссылки'])
                 for row in data:
                     cleaned_row = []
                     for cell in row:
@@ -304,7 +343,7 @@ def save_data(data, file_path, format_type):
                     cleaned_row.append(cleaned_cell)
                 df_data.append(cleaned_row)
             
-            df = pd.DataFrame(df_data, columns=['Ссылка на объект', 'ФИО', 'Полная карточка объекта'])
+            df = pd.DataFrame(df_data, columns=['Ссылка на объект', 'ФИО', 'Полная карточка объекта', 'Все ссылки'])
             df.to_excel(file_path, index=False, engine='openpyxl')
         
         print(f"✅ Файл сохранен: {file_path}")
@@ -380,16 +419,17 @@ def main():
         for i, profile_url in enumerate(profile_links, 1):
             print(f"\n📊 [{i}/{len(profile_links)}] Обрабатываю профиль...")
             try:
-                formatted_profile, name = scrape_profile_data(driver, profile_url)
+                formatted_profile, name, all_links = scrape_profile_data(driver, profile_url)
                 if formatted_profile:
-                    results.append([profile_url, name, formatted_profile])
+                    results.append([profile_url, name, formatted_profile, all_links])
                     print(f"✅ Успешно: {name}")
+                    print(f"🔗 Найдено ссылок: {len(all_links.split(' --- ')) if all_links != 'Ссылки не найдены' else 0}")
                 else:
-                    results.append([profile_url, name if name else "Не найдено", "Не найдено"])
+                    results.append([profile_url, name if name else "Не найдено", "Не найдено", "Ссылки не найдены"])
                     print("❌ Данные не получены")
             except Exception as e:
                 print(f"❌ Ошибка: {e}")
-                results.append([profile_url, "Ошибка", "Ошибка"])
+                results.append([profile_url, "Ошибка", "Ошибка", "Ошибка при сборе ссылок"])
 
             # Пауза между профилями
             if i < len(profile_links):
