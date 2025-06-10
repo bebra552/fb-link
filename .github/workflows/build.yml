@@ -25,21 +25,7 @@ jobs:
     
     - name: Build Windows executable
       run: |
-        pyinstaller --onefile --console ^
-          --hidden-import=selenium ^
-          --hidden-import=selenium.webdriver ^
-          --hidden-import=selenium.webdriver.chrome ^
-          --hidden-import=selenium.webdriver.chrome.service ^
-          --hidden-import=selenium.webdriver.common.by ^
-          --hidden-import=selenium.webdriver.common.action_chains ^
-          --hidden-import=selenium_stealth ^
-          --hidden-import=webdriver_manager ^
-          --hidden-import=webdriver_manager.chrome ^
-          --hidden-import=bs4 ^
-          --hidden-import=requests ^
-          --hidden-import=lxml ^
-          --name fb-scraper-windows ^
-          "1 (2).py"
+        pyinstaller --onefile --console --hidden-import=selenium --hidden-import=selenium.webdriver --hidden-import=selenium.webdriver.chrome --hidden-import=selenium.webdriver.chrome.service --hidden-import=selenium.webdriver.common.by --hidden-import=selenium.webdriver.common.action_chains --hidden-import=selenium_stealth --hidden-import=webdriver_manager --hidden-import=webdriver_manager.chrome --hidden-import=bs4 --hidden-import=requests --hidden-import=lxml --name fb-scraper-windows "1 (2).py"
     
     - name: Upload Windows artifact
       uses: actions/upload-artifact@v4
