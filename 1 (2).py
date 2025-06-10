@@ -6,13 +6,59 @@ from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
-from selenium_stealth import stealth
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 
 
 def human_delay(min_delay=1, max_delay=3):
     time.sleep(random.uniform(min_delay, max_delay))
+
+
+def setup_stealth_driver():
+    """Настройка браузера с антидетекцией без selenium_stealth"""
+    options = webdriver.ChromeOptions()
+    
+    # Основные настройки антидетекции
+    options.add_argument("--start-maximized")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--disable-infobars")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-web-security")
+    options.add_argument("--allow-running-insecure-content")
+    options.add_argument("--disable-features=VizDisplayCompositor")
+    
+    # Отключаем флаги автоматизации
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
+    
+    # Случайный User-Agent
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    ]
+    options.add_argument(f"user-agent={random.choice(user_agents)}")
+    
+    # Создаем драйвер
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    
+    # Скрипты для дополнительной маскировки
+    stealth_scripts = [
+        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})",
+        "Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]})",
+        "Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']})",
+        "window.chrome = {runtime: {}}",
+        "Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})})"
+    ]
+    
+    for script in stealth_scripts:
+        try:
+            driver.execute_script(script)
+        except:
+            pass
+    
+    return driver
 
 
 def extract_profile_data(target_div):
@@ -224,36 +270,8 @@ def main():
 
     print("\n🔧 Запуск браузера...")
 
-    # Настройка браузера
-    options = webdriver.ChromeOptions()
-    options.add_argument("--start-maximized")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--disable-infobars")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-web-security")
-    options.add_argument("--allow-running-insecure-content")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
-
-    user_agents = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    ]
-    options.add_argument(f"user-agent={random.choice(user_agents)}")
-
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-
-    stealth(driver,
-            languages=["en-US", "en"],
-            vendor="Google Inc.",
-            platform="Win32",
-            webgl_vendor="Intel Inc.",
-            renderer="Intel Iris OpenGL Engine",
-            fix_hairline=True,
-            )
+    # Настройка браузера с собственной антидетекцией
+    driver = setup_stealth_driver()
 
     try:
         print("🔐 Открываю Facebook для авторизации...")
